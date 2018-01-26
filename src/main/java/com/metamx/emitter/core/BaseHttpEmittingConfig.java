@@ -17,6 +17,7 @@
 package com.metamx.emitter.core;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.metamx.common.Pair;
 
 import javax.validation.constraints.Min;
 
@@ -26,8 +27,13 @@ public class BaseHttpEmittingConfig
   public static final int DEFAULT_FLUSH_COUNTS = 500;
 
   /** ensure the event buffers don't use more than 10% of memory by default */
-  public static final int DEFAULT_BATCH_QUEUE_SIZE_LIMIT = 50;
-  public static final int DEFAULT_MAX_BATCH_SIZE = (int) getDefaultMaxBatchSize(Runtime.getRuntime().maxMemory());
+  public static final int DEFAULT_MAX_BATCH_SIZE;
+  public static final int DEFAULT_BATCH_QUEUE_SIZE_LIMIT;
+  static {
+    Pair<Integer, Integer> batchConfigPair = getDefaultBatchSizeAndLimit(Runtime.getRuntime().maxMemory());
+    DEFAULT_MAX_BATCH_SIZE = batchConfigPair.lhs;
+    DEFAULT_BATCH_QUEUE_SIZE_LIMIT = batchConfigPair.rhs;
+  }
 
   /** Do not time out in case flushTimeOut is not set */
   public static final long DEFAULT_FLUSH_TIME_OUT = Long.MAX_VALUE;
@@ -37,6 +43,25 @@ public class BaseHttpEmittingConfig
   public static final float DEFAULT_HTTP_TIMEOUT_ALLOWANCE_FACTOR = 2.0f;
   /** The default value effective doesn't set the min timeout */
   public static final int DEFAULT_MIN_HTTP_TIMEOUT_MILLIS = 0;
+
+  public static Pair<Integer, Integer> getDefaultBatchSizeAndLimit(long maxMemory)
+  {
+    long memoryLimit = maxMemory / 10;
+    long batchSize = 5 * 1024 * 1024;
+    long queueLimit = 50;
+
+    if (batchSize * queueLimit > memoryLimit) {
+      queueLimit = memoryLimit / batchSize;
+    }
+
+    // make room for at least two queue items
+    if (queueLimit < 2) {
+      queueLimit = 2;
+      batchSize = memoryLimit / queueLimit;
+    }
+
+    return new Pair<>((int) batchSize, (int) queueLimit);
+  }
 
   public static long getDefaultMaxBatchSize(long maxMemory)
   {
