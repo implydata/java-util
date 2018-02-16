@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-
 package com.metamx.emitter.core;
 
 import com.google.common.base.Preconditions;
@@ -24,19 +23,19 @@ import java.util.concurrent.locks.AbstractQueuedLongSynchronizer;
 
 /**
  * Buffer for batched data + synchronization state.
- *
+ * <p>
  * The state structure ({@link AbstractQueuedLongSynchronizer#state}):
  * Bits 0-30 - bufferWatermark
  * Bit 31 - always 0
  * Bits 32-62 - "parties" (the number of concurrent writers)
  * Bit 63 - sealed flag
- *
+ * <p>
  * Writer threads (callers of {@link HttpPostEmitter#emit(Event)}) are eligible to come, increment bufferWatermark and
  * write data into the buffer, as long as sealed flag is false.
- *
+ * <p>
  * {@link HttpPostEmitter#emittingThread} is eligible to emit the buffer, when sealed flag=true and parties=0 (all
  * writes are completed). See {@link #isEmittingAllowed(long)}.
- *
+ * <p>
  * In this class, "lock" means "increment number of parties by 1", i. e. lock the emitter thread from emitting this
  * batch. "Unlock" means "decrement number of parties by 1".
  */
@@ -85,8 +84,12 @@ class Batch extends AbstractQueuedLongSynchronizer
 
   /**
    * Ordering number of this batch, as they filled & emitted in {@link HttpPostEmitter} serially, starting from 0.
+   * It's a boxed Integer rather than int, because we want to minimize the number of allocations done in
+   * {@link HttpPostEmitter#onSealExclusive} and so the probability of {@link OutOfMemoryError}.
+   * @see HttpPostEmitter#onSealExclusive
+   * @see HttpPostEmitter#concurrentBatch
    */
-  final int batchNumber;
+  final Integer batchNumber;
 
   /**
    * The number of events in this batch, needed for event count-based batch emitting.
@@ -221,7 +224,8 @@ class Batch extends AbstractQueuedLongSynchronizer
     }
   }
 
-  void sealIfFlushNeeded() {
+  void sealIfFlushNeeded()
+  {
     long timeSinceFirstEvent = System.currentTimeMillis() - firstEventTimestamp;
     if (firstEventTimestamp > 0 && timeSinceFirstEvent > emitter.config.getFlushMillis()) {
       seal();
